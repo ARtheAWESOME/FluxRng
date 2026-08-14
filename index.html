@@ -41,18 +41,25 @@
     text-align: center;
   }
 
+  .header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+
   .title {
     font-size: 13px;
     letter-spacing: 0.2em;
     text-transform: uppercase;
     color: var(--dim);
-    margin-bottom: 10px;
   }
 
   .best-rank {
-    font-size: 12px;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
     color: var(--dim);
-    margin-bottom: 28px;
   }
 
   .best-rank b {
@@ -168,8 +175,10 @@
 <body>
 
 <div class="stage">
-  <div class="title">Pull</div>
-  <div class="best-rank" id="bestRank">Best pull: <b>—</b></div>
+  <div class="header-row">
+    <div class="title">Leaderboard</div>
+    <div class="best-rank" id="bestRank">Best: <b>—</b></div>
+  </div>
 
   <div class="card" id="card">
     <div class="result" id="result">
@@ -179,6 +188,9 @@
 
   <button id="pullBtn">Pull</button>
 </div>
+
+<!-- Supabase client SDK (only used for the shared leaderboard) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
 <script>
   // ---- Configure your pool here ----
@@ -203,11 +215,9 @@
   // Rank order = position in the pool array (last = rarest/best)
   let bestIndex = -1;
 
-  function updateBestRank(item, index) {
-    if (index > bestIndex) {
-      bestIndex = index;
-      bestRankEl.innerHTML = `Best pull: <b style="color:${item.color}">${item.name}</b>`;
-    }
+  function showBest(index, name, color) {
+    bestIndex = index;
+    bestRankEl.innerHTML = `Best: <b style="color:${color}">${name}</b>`;
   }
 
   function oddsLabel(item) {
@@ -233,7 +243,11 @@
     setTimeout(() => {
       const item = pickItem();
       const index = pool.indexOf(item);
-      updateBestRank(item, index);
+
+      if (index > bestIndex) {
+        showBest(index, item.name, item.color);
+        if (window.reportBestToLeaderboard) window.reportBestToLeaderboard(item, index);
+      }
 
       card.classList.remove("rolling");
       card.style.setProperty("--glow", item.color);
@@ -253,7 +267,62 @@
     }, 600);
   }
 
+  // Core gameplay is wired up now, unconditionally — the button works
+  // even if the Supabase block below never runs.
   btn.addEventListener("click", pull);
+
+  // ---- Shared leaderboard (Supabase) ----
+  // Paste your project values here — Supabase dashboard → Project Settings → API
+  const SUPABASE_URL = "https://ezryjvozdmgcliluyssn.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_3-7H5Hw-yNUaeKdB-VdmFw_ZoqXziae";
+
+  (function setupLeaderboard() {
+    try {
+      if (!window.supabase || SUPABASE_URL.startsWith("YOUR_")) {
+        console.warn("Supabase not configured yet — leaderboard is local-only for this session.");
+        return;
+      }
+
+      const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+      // Load whatever the current global best is on page load
+      client.from("leaderboard").select("*").eq("id", 1).single()
+        .then(({ data, error }) => {
+          if (error) throw error;
+          if (data && data.rank_index > bestIndex) {
+            showBest(data.rank_index, data.name, data.color);
+          }
+        })
+        .catch((err) => console.warn("Could not load leaderboard:", err));
+
+      // Live updates when any other visitor sets a new best
+      client
+        .channel("leaderboard-changes")
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "leaderboard" }, (payload) => {
+          const row = payload.new;
+          if (row && row.rank_index > bestIndex) {
+            showBest(row.rank_index, row.name, row.color);
+          }
+        })
+        .subscribe();
+
+      // Exposed so pull() can call it without depending on this block existing
+      window.reportBestToLeaderboard = async (item, index) => {
+        try {
+          const { data } = await client.from("leaderboard").select("rank_index").eq("id", 1).single();
+          if (!data || index > data.rank_index) {
+            await client.from("leaderboard")
+              .update({ rank_index: index, name: item.name, color: item.color })
+              .eq("id", 1);
+          }
+        } catch (err) {
+          console.warn("Could not write to leaderboard:", err);
+        }
+      };
+    } catch (err) {
+      console.warn("Leaderboard setup failed — falling back to local-only:", err);
+    }
+  })();
 </script>
 
 </body>
