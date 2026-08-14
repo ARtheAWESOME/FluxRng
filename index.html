@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pull</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #14171f;
+    --text: #e8e9ee;
+    --dim: #6b7080;
+
+    --common: #9aa0ab;
+    --uncommon: #4fd17c;
+    --rare: #4d9bf0;
+    --epic: #b569f0;
+    --legendary: #f0b93a;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .stage {
+    width: 100%;
+    max-width: 380px;
+    text-align: center;
+  }
+
+  .title {
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 10px;
+  }
+
+  .best-rank {
+    font-size: 12px;
+    color: var(--dim);
+    margin-bottom: 28px;
+  }
+
+  .best-rank b {
+    font-weight: 600;
+    transition: color 0.3s ease;
+  }
+
+  .card {
+    position: relative;
+    height: 220px;
+    border-radius: 16px;
+    background: var(--panel);
+    border: 1px solid #232733;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin-bottom: 28px;
+    transition: border-color 0.4s ease, box-shadow 0.4s ease;
+  }
+
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 30%, var(--glow, transparent) 0%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+
+  .card.lit::before { opacity: 0.35; }
+
+  .result {
+    position: relative;
+    z-index: 1;
+    padding: 0 20px;
+  }
+
+  .result-name {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+
+  .result-name.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .result-rarity {
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.3s ease 0.05s;
+  }
+
+  .result-rarity.show { opacity: 1; }
+
+  .result-rarity.match-name {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+
+  .placeholder {
+    color: var(--dim);
+    font-size: 14px;
+  }
+
+  button {
+    width: 100%;
+    padding: 14px;
+    border-radius: 10px;
+    border: none;
+    background: var(--text);
+    color: var(--bg);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+  }
+
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  .result-odds {
+    font-size: 11px;
+    color: var(--dim);
+    margin-top: 10px;
+    opacity: 0;
+    transition: opacity 0.3s ease 0.1s;
+  }
+
+  .result-odds.show { opacity: 1; }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-3px); }
+    40% { transform: translateX(3px); }
+    60% { transform: translateX(-2px); }
+    80% { transform: translateX(2px); }
+  }
+
+  .card.rolling { animation: shake 0.35s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="title">Pull</div>
+  <div class="best-rank" id="bestRank">Best pull: <b>—</b></div>
+
+  <div class="card" id="card">
+    <div class="result" id="result">
+      <div class="placeholder" id="placeholder">Press the button to pull</div>
+    </div>
+  </div>
+
+  <button id="pullBtn">Pull</button>
+</div>
+
+<script>
+  // ---- Configure your pool here ----
+  // "weight" is relative odds: weight 1 vs weight 20 means the weight-1
+  // item is 20x rarer. Weights don't need to add to any particular number.
+  const pool = [
+    { name: "Common",         rarity: "common",    weight: 50, color: "var(--common)" },
+    { name: "Uncommon",       rarity: "uncommon",  weight: 25, color: "var(--uncommon)" },
+    { name: "Rare Item",      rarity: "rare",      weight: 20, color: "var(--rare)" },
+    { name: "Epic Item",      rarity: "epic",      weight: 4,  color: "var(--epic)" },
+    { name: "Legendary Item", rarity: "legendary", weight: 1,  color: "var(--legendary)" },
+  ];
+  // -----------------------------------
+
+  const card = document.getElementById("card");
+  const result = document.getElementById("result");
+  const btn = document.getElementById("pullBtn");
+  const bestRankEl = document.getElementById("bestRank");
+
+  const totalWeight = pool.reduce((sum, item) => sum + item.weight, 0);
+
+  // Rank order = position in the pool array (last = rarest/best)
+  let bestIndex = -1;
+
+  function updateBestRank(item, index) {
+    if (index > bestIndex) {
+      bestIndex = index;
+      bestRankEl.innerHTML = `Best pull: <b style="color:${item.color}">${item.name}</b>`;
+    }
+  }
+
+  function oddsLabel(item) {
+    const oneInN = (totalWeight / item.weight).toFixed(1).replace(/\.0$/, "");
+    return `1 in ${oneInN}`;
+  }
+
+  function pickItem() {
+    let roll = Math.random() * totalWeight;
+    for (const item of pool) {
+      if (roll < item.weight) return item;
+      roll -= item.weight;
+    }
+    return pool[pool.length - 1]; // fallback, shouldn't hit
+  }
+
+  function pull() {
+    btn.disabled = true;
+    card.classList.add("rolling");
+    card.classList.remove("lit");
+    result.innerHTML = `<div class="placeholder">Rolling…</div>`;
+
+    setTimeout(() => {
+      const item = pickItem();
+      const index = pool.indexOf(item);
+      updateBestRank(item, index);
+
+      card.classList.remove("rolling");
+      card.style.setProperty("--glow", item.color);
+      card.classList.add("lit");
+
+      result.innerHTML = `
+        <div class="result-name" id="resultName" style="color:${item.color}">${item.name}</div>
+        <div class="result-odds" id="resultOdds">${oddsLabel(item)}</div>
+      `;
+
+      requestAnimationFrame(() => {
+        document.getElementById("resultName").classList.add("show");
+        document.getElementById("resultOdds").classList.add("show");
+      });
+
+      btn.disabled = false;
+    }, 600);
+  }
+
+  btn.addEventListener("click", pull);
+</script>
+
+</body>
+</html>
