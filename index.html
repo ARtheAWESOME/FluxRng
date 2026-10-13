@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Flux RNG</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{--bg:#f4f5f9;--card:#fff;--tx:#161a26;--mut:#6b7385;--bd:#dfe3ec;--ac:#6d5efc;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1019;--card:#181b29;--tx:#eef0f7;--mut:#8b93aa;--bd:#2a2f45}}
+:root[data-theme="dark"]{--bg:#0e1019;--card:#181b29;--tx:#eef0f7;--mut:#8b93aa;--bd:#2a2f45}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px system-ui,-apple-system,Segoe UI,sans-serif}
+.w{max-width:960px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px;margin-bottom:14px}
+h1{margin:0 0 4px;font-size:26px}h2{margin:0 0 12px;font-size:17px}
+.mut{color:var(--mut);font-size:14px}
+input,select{width:100%;padding:11px;margin:5px 0;border-radius:9px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font-size:16px}
+button{padding:11px 18px;border:0;border-radius:9px;background:var(--ac);color:#fff;font-size:16px;font-weight:600;cursor:pointer}
+button.g{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+button.d{background:#e5484d}
+button:disabled{opacity:.45;cursor:default}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:720px){.grid{grid-template-columns:1fr}}
+.stat{font-size:22px;font-weight:700}
+#res{height:120px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:#111;background:var(--bd);margin:10px 0;text-align:center}
+#res small{font-size:14px;font-weight:600}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;color:#111;font-size:13px;font-weight:700}
+.tw{overflow:auto}.sc{max-height:280px}table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--bd);white-space:nowrap}
+tr.me td{background:rgba(109,94,252,.15)}
+.err{color:#e5484d;font-size:14px;min-height:18px}
+.hide{display:none}.up{margin-top:8px;width:100%}
+</style></head><body><div class="w">
+<div id="auth" class="card" style="max-width:380px;margin:8vh auto 0">
+<h1>⚡ Flux RNG</h1><p class="mut">Roll for ranks, earn coins, upgrade your luck, climb the leaderboard.</p>
+<input id="u" placeholder="Username (3-16 letters/numbers/_)" autocomplete="username" maxlength="16">
+<input id="p" type="password" placeholder="Password (4+ chars)" autocomplete="current-password">
+<div class="err" id="aerr"></div>
+<div class="row"><button id="li">Sign in</button><button id="su" class="g">Create account</button></div>
+<p class="mut" id="dbmsg"></p>
+</div>
+<div id="app" class="hide">
+<div class="card row" style="justify-content:space-between"><div><h1>⚡ Flux RNG</h1><span class="mut">Signed in as <b id="who"></b></span></div>
+<button class="g" id="out">Sign out</button></div>
+<div class="grid">
+<div class="card"><h2>Roll</h2>
+<div class="row"><div>🪙 <span class="stat" id="coins">0</span></div><div class="mut">Rolls: <b id="rolls">0</b> · Best: <span id="best"></span></div></div>
+<div id="res"><small>Press roll!</small></div>
+<button id="roll" style="width:100%;font-size:18px">Roll</button></div>
+<div class="card"><h2>Upgrades</h2>
+<p>🍀 Luck level: <span class="stat" id="lk">0</span></p>
+<div class="row"><button id="up" style="flex:1"></button><button id="upm" class="g">Max</button></div>
+<p style="margin-top:18px">⏱ Cooldown: <span class="stat" id="cdv"></span></p>
+<button id="cu" class="up"></button></div>
+</div>
+<div class="card"><h2>Ranks &amp; odds</h2><div class="tw sc"><table id="odds"></table></div></div>
+<div class="card"><h2>🏆 Leaderboard</h2><div class="tw"><table id="lb"></table></div></div>
+<div class="card hide" id="own"><h2>👑 Owner panel</h2>
+<select id="tp"></select><div class="mut" id="tinfo"></div>
+<input id="amt" type="number" min="0" placeholder="Coin amount">
+<select id="rk"></select>
+<div class="row" style="margin-top:6px"><button id="a1">Set coins</button><button id="a2">Give coins</button><button id="a3">Give rank</button><button id="a4" class="d">Ban / Unban</button></div>
+<div class="mut" id="amsg"></div></div>
+</div></div>
+<script>
+const NAMES="Common,Uncommon,Rare,Epic,Legendary,Mythic,Celestial,Divine,Exotic,Ethereal,Cosmic,Astral,Void,Abyssal,Eternal,Transcendent,Omnipotent,Primordial,Infinite,Forbidden,Godly,Quantum,Singularity,Flux".split(",");
+const COL=["#9ca3af","#4ade80","#3b82f6","#a855f7","#fbbf24","#f472b6","#2dd4bf","#fda4af","#7dd3fc","#c4b5fd","#6366f1","#f0abfc","#1e1b4b","#000000","#fb923c","#f87171","#34d399","#f8fafc","#7f1d1d","#d946ef","#84cc16","#a16207","#581c87","linear-gradient(90deg,#ef4444,#f59e0b,#eab308,#22c55e,#3b82f6,#8b5cf6,#ec4899)"],WH=[10,12,13,18,21,22];
+const R=NAMES.map((n,i)=>[n,COL[i],100*Math.pow(.65,i),Math.round(5*Math.pow(1.95,i)),WH.includes(i)?"#fff":"#111"]);
+const MAXCD=24,$=id=>document.getElementById(id);
+const cost=l=>Math.floor(15*Math.pow(1.3,l)),ccost=l=>Math.floor(30*Math.pow(1.5,l));
+const cdOf=l=>Math.max(250,3000*Math.pow(.9,l));
+const fmt=n=>Number(n).toLocaleString();
+function weights(l){const m=1+.12*l,w=R.map((r,i)=>r[2]*Math.pow(m,i/2)),s=w.reduce((a,b)=>a+b,0);return w.map(x=>x/s)}
+const badge=i=>{const s=document.createElement("span");s.className="badge";s.style.background=R[i][1];s.style.color=R[i][4];s.textContent=R[i][0];return s};
+async function sha(s){const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+let db=null,me=null,ref=null,unsub=null,unsub2=null,saving=false,pend=false,lastRoll=0,isOwner=false,names="";
+function stor(k,v){try{if(v===undefined)return localStorage.getItem(k);v===null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}return null}
+(async()=>{
+  try{db=await claude.use("db")}catch(e){}
+  try{const u=await claude.use("user");isOwner=!!(u&&u.isOwner())}catch(e){}
+  if(!db)$("dbmsg").textContent="Shared database unavailable here — open the published link while signed in to claude.ai.";
+  const s=stor("rng_user");if(s&&db)resume(s);
+})();
+const valid=u=>/^[a-z0-9_]{3,16}$/.test(u);
+const norm=x=>{x=JSON.parse(JSON.stringify(x));x.counts=R.map((_,i)=>(x.counts&&x.counts[i])||0);x.cd=x.cd||0;return x};
+async function resume(name){try{const d=await db.collection("players").doc(name).get();if(d.exists&&!d.data().banned){me=norm(d.data());start()}}catch(e){}}
+$("su").onclick=async()=>{
+  const u=$("u").value.trim().toLowerCase(),p=$("p").value;$("aerr").textContent="";
+  if(!db)return $("aerr").textContent="Database unavailable.";
+  if(!valid(u))return $("aerr").textContent="Username: 3-16 letters, numbers or _.";
+  if(p.length<4)return $("aerr").textContent="Password must be 4+ characters.";
+  try{
+    const r=db.collection("players").doc(u);
+    if((await r.get()).exists)return $("aerr").textContent="That username is taken.";
+    const salt=crypto.randomUUID();
+    me=norm({username:u,salt,hash:await sha(salt+p),coins:0,luck:0,cd:0,rolls:0,best:-1,adminV:0});
+    await r.set(me);stor("rng_user",u);start();
+  }catch(e){$("aerr").textContent="Could not create account ("+(e.code||"error")+")."}
+};
+$("li").onclick=async()=>{
+  const u=$("u").value.trim().toLowerCase(),p=$("p").value;$("aerr").textContent="";
+  if(!db)return $("aerr").textContent="Database unavailable.";
+  try{
+    const d=await db.collection("players").doc(u).get();
+    if(!d.exists||!valid(u))return $("aerr").textContent="Wrong username or password.";
+    const x=d.data();
+    if(await sha(x.salt+p)!==x.hash)return $("aerr").textContent="Wrong username or password.";
+    if(x.banned)return $("aerr").textContent="This account is banned.";
+    me=norm(x);stor("rng_user",u);start();
+  }catch(e){$("aerr").textContent="Could not sign in ("+(e.code||"error")+")."}
+};
+$("p").addEventListener("keydown",e=>{if(e.key==="Enter")$("li").click()});
+function signout(msg){stor("rng_user",null);if(unsub)unsub();if(unsub2)unsub2();me=null;$("app").classList.add("hide");$("auth").classList.remove("hide");$("p").value="";$("aerr").textContent=msg||""}
+$("out").onclick=()=>signout();
+function start(){
+  ref=db.collection("players").doc(me.username);
+  $("auth").classList.add("hide");$("app").classList.remove("hide");$("who").textContent=me.username;
+  $("own").classList.toggle("hide",!isOwner);
+  $("rk").textContent="";R.forEach((r,i)=>{const o=document.createElement("option");o.value=i;o.textContent=r[0];$("rk").appendChild(o)});
+  render();
+  if(unsub)unsub();if(unsub2)unsub2();
+  unsub=db.collection("players").onSnapshot(snap=>board(snap.docs.map(d=>d.data())),()=>{});
+  unsub2=ref.onSnapshot(d=>{const x=d.data();if(!x||!me)return;
+    if(x.banned)return signout("This account has been banned.");
+    if((x.adminV||0)!==(me.adminV||0)){me=norm(x);render()}},()=>{});
+}
+function save(){
+  pend=true;if(saving)return;saving=true;
+  (async()=>{while(pend){pend=false;try{await ref.set(me)}catch(e){}}saving=false})();
+}
+function render(){
+  $("coins").textContent=fmt(me.coins);$("rolls").textContent=fmt(me.rolls);$("lk").textContent=fmt(me.luck);
+  const b=$("best");b.textContent="";me.best>=0?b.appendChild(badge(me.best)):b.append("—");
+  const c=cost(me.luck);$("up").textContent="Upgrade luck — 🪙 "+fmt(c);$("up").disabled=me.coins<c;$("upm").disabled=me.coins<c;
+  $("cdv").textContent=(cdOf(me.cd)/1000).toFixed(2)+"s";
+  const cu=$("cu");
+  if(me.cd>=MAXCD){cu.textContent="Cooldown maxed";cu.disabled=true}
+  else{const cc=ccost(me.cd);cu.textContent="Reduce cooldown — 🪙 "+fmt(cc)+" (→ "+(cdOf(me.cd+1)/1000).toFixed(2)+"s)";cu.disabled=me.coins<cc}
+  const w=weights(me.luck),t=$("odds");t.textContent="";
+  R.forEach((r,i)=>{const tr=t.insertRow();tr.insertCell().appendChild(badge(i));
+    const p=w[i]*100;tr.insertCell().textContent=p>=1?p.toFixed(1)+"%":p>=.001?p.toFixed(3)+"%":"1 in "+fmt(Math.round(100/p));
+    tr.insertCell().textContent="+"+fmt(r[3])+" 🪙";tr.insertCell().textContent="×"+fmt(me.counts[i]||0)});
+}
+function tick(){if(!me)return;const left=cdOf(me.cd)-(Date.now()-lastRoll),b=$("roll");
+  if(left>0){const pc=Math.min(100,100*(1-left/cdOf(me.cd)));b.disabled=true;b.textContent="Cooldown "+(left/1000).toFixed(1)+"s";b.style.background=`linear-gradient(90deg,var(--ac) ${pc}%,#8b93aa ${pc}%)`}else{b.disabled=false;b.textContent="Roll";b.style.background=""}}
+setInterval(tick,80);
+$("roll").onclick=()=>{
+  if(!me||Date.now()-lastRoll<cdOf(me.cd))return;lastRoll=Date.now();
+  const w=weights(me.luck);let x=Math.random(),i=0;
+  for(;i<R.length-1;i++){x-=w[i];if(x<0)break}
+  me.coins+=R[i][3];me.rolls++;me.counts[i]++;if(i>me.best)me.best=i;
+  const r=$("res");r.style.background=R[i][1];r.style.color=R[i][4];r.textContent="";
+  r.append(R[i][0]);const s=document.createElement("small");s.textContent="+"+fmt(R[i][3])+" coins";r.appendChild(s);
+  render();save();tick();
+};
+$("up").onclick=()=>{const c=cost(me.luck);if(me.coins<c)return;me.coins-=c;me.luck++;render();save()};
+$("upm").onclick=()=>{let n=0;while(n<5000&&me.coins>=cost(me.luck)){me.coins-=cost(me.luck);me.luck++;n++}if(n){render();save()}};
+$("cu").onclick=()=>{const c=ccost(me.cd);if(me.cd>=MAXCD||me.coins<c)return;me.coins-=c;me.cd++;render();save()};
+function board(all){
+  const list=all.filter(p=>!p.banned);
+  list.sort((a,b)=>(b.best-a.best)||((b.counts?.[b.best]||0)-(a.counts?.[a.best]||0))||(b.rolls-a.rolls));
+  const t=$("lb");t.textContent="";
+  const h=t.createTHead().insertRow();["#","Player","Best rank","Times","Luck","Rolls","Coins"].forEach(x=>{const c=document.createElement("th");c.textContent=x;h.appendChild(c)});
+  list.slice(0,25).forEach((p,k)=>{
+    const tr=t.insertRow();if(me&&p.username===me.username)tr.className="me";
+    tr.insertCell().textContent=k+1;tr.insertCell().textContent=p.username;
+    const c=tr.insertCell();p.best>=0?c.appendChild(badge(p.best)):c.append("—");
+    tr.insertCell().textContent=p.best>=0?"×"+fmt(p.counts[p.best]||0):"";
+    tr.insertCell().textContent=fmt(p.luck);tr.insertCell().textContent=fmt(p.rolls);tr.insertCell().textContent=fmt(p.coins);
+  });
+  if(isOwner){
+    const key=all.map(p=>p.username).sort().join(),sel=$("tp").value;
+    if(key!==names){names=key;$("tp").textContent="";all.map(p=>p.username).sort().forEach(n=>{const o=document.createElement("option");o.value=n;o.textContent=n;$("tp").appendChild(o)});if(sel)$("tp").value=sel}
+    const p=all.find(x=>x.username===$("tp").value);
+    $("tinfo").textContent=p?fmt(p.coins)+" coins · luck "+fmt(p.luck)+" · best "+(p.best>=0?R[p.best][0]:"none")+(p.banned?" · BANNED":""):"";
+  }
+}
+$("tp").onchange=()=>{names=""};
+async function adm(fn){
+  const u=$("tp").value;if(!u||!db)return;
+  try{const r=db.collection("players").doc(u),d=await r.get();if(!d.exists)return;
+    const x=norm(d.data());fn(x);x.adminV=Date.now();await r.set(x);$("amsg").textContent="Done: "+u}
+  catch(e){$("amsg").textContent="Failed ("+(e.code||"error")+")"}
+}
+const amt=()=>{const n=Math.floor(Number($("amt").value));return isFinite(n)&&n>=0?n:null};
+$("a1").onclick=()=>{const n=amt();if(n!==null)adm(x=>x.coins=n)};
+$("a2").onclick=()=>{const n=amt();if(n!==null)adm(x=>x.coins+=n)};
+$("a3").onclick=()=>{const i=Number($("rk").value);adm(x=>{x.counts[i]++;if(i>x.best)x.best=i})};
+$("a4").onclick=()=>adm(x=>{x.banned=!x.banned});
+</script></body></html>
